@@ -32,11 +32,11 @@ jobs:
           echo 'No need to set up crave, we are already running in devspace!'
         else
           mkdir -p ${HOME}/bin
-          echo "Downloading Crave 0.2-7237..."
-          curl -sL https://github.com/accupara/crave/releases/download/0.2-7237/crave-0.2-7237-linux-amd64.bin -o ${HOME}/bin/crave
+          echo "Downloading Crave from verified repository release..."
+          curl -fL https://github.com/BangerSoul/crave_aosp_builder/releases/download/tools-v1/crave -o ${HOME}/bin/crave
           chmod +x ${HOME}/bin/crave
           sudo ln -sf ${HOME}/bin/crave /usr/bin/crave
-          crave -n version || true
+          crave -n version
           envsubst < ${PWD}/crave.conf.sample > ${PWD}/crave.conf
           mkdir -p ${HOME}/.crave
           cp ${PWD}/crave.conf ${HOME}/.crave/crave.conf
