@@ -101,7 +101,6 @@ jobs:
           curl -fL https://github.com/BangerSoul/crave_aosp_builder/releases/download/tools-v1/crave -o ${HOME}/bin/crave
           chmod +x ${HOME}/bin/crave
           sudo ln -sf ${HOME}/bin/crave /usr/bin/crave
-          crave -n version
           envsubst < ${PWD}/crave.conf.sample > ${PWD}/crave.conf
           mkdir -p ${HOME}/.crave
           cp ${PWD}/crave.conf ${HOME}/.crave/crave.conf
