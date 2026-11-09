@@ -24,29 +24,50 @@ jobs:
     - name: Set up environment
       run: |
         sudo apt-get update
-        sudo apt-get install -y tmux
+        sudo apt-get install -y tmux jq
 
-    - name: Configure the 'crave' environment
+    - name: Configure Crave binary and credentials
+      env:
+        CRAVE_USER_SECRET: ${{ secrets.CRAVE_USERNAME }}
+        CRAVE_AUTH_SECRET: ${{ secrets.CRAVE_TOKEN }}
       run: |
         if [[ $DCDEVSPACE == *1* ]]; then
           echo 'No need to set up crave, we are already running in devspace!'
         else
-          mkdir -p ${HOME}/bin
+          mkdir -p ${HOME}/bin ${HOME}/.crave
           cp ${PWD}/bin/crave ${HOME}/bin/crave
           chmod +x ${HOME}/bin/crave
           sudo ln -sf ${HOME}/bin/crave /usr/bin/crave
-          envsubst < ${PWD}/crave.conf.sample > ${PWD}/crave.conf
-          mkdir -p ${HOME}/.crave
-          cp ${PWD}/crave.conf ${HOME}/.crave/crave.conf
-          rm -rf ${PWD}/crave.conf.sample          
+
+          CRAVE_USER="$CRAVE_USER_SECRET"
+          if [[ -z "$CRAVE_USER" || "$CRAVE_USER" != *"@"* ]]; then
+            CRAVE_USER="iamshaikhazmathulla@gmail.com"
+          fi
+          CRAVE_AUTH="$CRAVE_AUTH_SECRET"
+          if [[ -z "$CRAVE_AUTH" ]]; then
+            CRAVE_AUTH="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjI3MiwidGVhbUlkIjoxNCwiaXNBcGlLZXkiOnRydWUsImlhdCI6MTc5NDIwMzkxMH0.WLw9yN_GWdlNiTdHEygKCqmzqQvnr6Tuvkt9gQPtP-E"
+          fi
+
+          cat << EOF > ${HOME}/.crave/crave.conf
+{
+  "username": "${CRAVE_USER}",
+  "headers": {
+    "Content-Type": "application/json",
+    "Authorization": "${CRAVE_AUTH}",
+    "User-Agent": "Crave"
+  },
+  "projects": [],
+  "server": "https://foss.crave.io/api"
+}
+EOF
+          cp ${HOME}/.crave/crave.conf ${PWD}/crave.conf
+          echo "Crave configuration created:"
+          jq -r '.username' ${HOME}/.crave/crave.conf
         fi
-      env:
-        CRAVE_USERNAME: ${{ secrets.CRAVE_USERNAME }}
-        CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
 
     - name: Run crave devspace
       run: |
-        crave ${{ secrets.CRAVE_FLAGS }} -n devspace -- "bash -c '
+        crave devspace -- "bash -c '
           set -e
           echo \"=== Setting up GitHub Actions Runner in Devspace ===\"
           RUNNER_DIR=\"/crave-devspaces/actions-runner\"
