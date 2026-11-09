@@ -451,12 +451,12 @@ jobs:
         fi
 
         export CRAVE_USER CRAVE_AUTH
-        python3 -c "import json, os; conf = {'username': os.environ['CRAVE_USER'], 'headers': {'Content-Type': 'application/json', 'Authorization': os.environ['CRAVE_AUTH'], 'User-Agent': 'Crave'}, 'projects': [], 'server': 'https://foss.crave.io/api'}; open(os.path.expanduser('~/.crave/crave.conf'), 'w').write(json.dumps(conf, indent=2)); open(os.path.expanduser('~/crave.conf'), 'w').write(json.dumps(conf, indent=2))"
+        python3 -c "import json, os; pid = [int(os.environ['PROJECTID'])] if 'PROJECTID' in os.environ and os.environ['PROJECTID'].isdigit() else [93]; conf = {'username': os.environ['CRAVE_USER'], 'headers': {'Content-Type': 'application/json', 'Authorization': os.environ['CRAVE_AUTH'], 'User-Agent': 'Crave'}, 'projects': pid, 'server': 'https://foss.crave.io/api'}; open(os.path.expanduser('~/.crave/crave.conf'), 'w').write(json.dumps(conf, indent=2)); open(os.path.expanduser('~/crave.conf'), 'w').write(json.dumps(conf, indent=2))"
 
         if [ -f ${PWD}/bin/crave ]; then
           chmod +x ${PWD}/bin/crave
-          sudo cp ${PWD}/bin/crave /usr/local/bin/crave
-          sudo cp ${PWD}/bin/crave /usr/bin/crave
+          sudo install -m 755 ${PWD}/bin/crave /usr/local/bin/crave || true
+          sudo install -m 755 ${PWD}/bin/crave /usr/bin/crave || true
         fi
 
         if [[ -z "${{ secrets.CUSTOM_YAML }}" ]]; then
@@ -608,12 +608,14 @@ jobs:
     - name: Display error.log
       if: ${{ failure() }}
       id: errorlog
+      continue-on-error: true
       run: |
         cd $PROJECTFOLDER
-        crave ssh -- sleep 1
-        crave pull out/error.log
-        echo "Displaying out/error.log"
-        cat out/error.log
+        timeout 15s crave pull out/error.log || true
+        if [ -f out/error.log ]; then
+          echo "Displaying out/error.log"
+          cat out/error.log
+        fi
 
       # Upload to Telegram
     - name: Upload Using telegram-upload
