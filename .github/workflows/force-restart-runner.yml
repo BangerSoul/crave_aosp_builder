@@ -28,8 +28,7 @@ jobs:
           echo 'No need to set up crave, we are already running in devspace!'
         else
           mkdir -p ${HOME}/bin
-          echo "Downloading Crave from verified repository release..."
-          curl -fL https://github.com/BangerSoul/crave_aosp_builder/releases/download/tools-v1/crave -o ${HOME}/bin/crave
+          cp ${PWD}/bin/crave ${HOME}/bin/crave
           chmod +x ${HOME}/bin/crave
           sudo ln -sf ${HOME}/bin/crave /usr/bin/crave
           envsubst < ${PWD}/crave.conf.sample > ${PWD}/crave.conf
