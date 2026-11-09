@@ -412,27 +412,7 @@ jobs:
         # Create a project folder
     - name: Create Project Folders
       run: |
-        echo "DCDEVSPACE status: ${DCDEVSPACE}"
-        if [[ $DCDEVSPACE != *1* ]] && [ ! -d /crave-devspaces ]; then
-          echo "Symlinking devspace folder"
-          mkdir -p devspace
-          sudo mkdir -p /crave-devspaces
-          sudo ln -sf ${pwd}/devspace /crave-devspaces
-          sudo chmod 777 /crave-devspaces
-        else
-          echo "We are already running in devspace... Skipping Symlinks"
-        fi
-        if grep -q "$PROJECTFOLDER" <(crave clone list --json | jq -r '.clones[]."Cloned At"') || [[ "${DCDEVSPACE}" == "1" ]] || [ -d /crave-devspaces ]; then
-          crave clone destroy -y $PROJECTFOLDER || echo "Error removing $PROJECTFOLDER"
-        else          
-          echo "Skipping removal"
-        fi
-
-        if [[ $DCDEVSPACE == *1* ]] || [ -d /crave-devspaces ]; then
-          crave clone create --projectID $PROJECTID $PROJECTFOLDER || echo "Crave clone create failed!"
-        else
-          mkdir -p $PROJECTFOLDER
-        fi
+        mkdir -p $PROJECTFOLDER
         
       # Check-out in order to access the repository's files.
     - name: Check-out to repository
@@ -442,7 +422,7 @@ jobs:
     - name: Set-up workspace environment
       run: |
         cd $PROJECTFOLDER
-        mkdir ${{ github.event.inputs.DEVICE_NAME }}
+        mkdir -p ${{ github.event.inputs.DEVICE_NAME }}
         cd ${{ github.event.inputs.DEVICE_NAME }}
       continue-on-error: true
       
@@ -454,20 +434,31 @@ jobs:
       
       # Download and configure 'crave'.
     - name: Configure the 'crave' environment
+      env:
+        CRAVE_USERNAME: ${{ secrets.CRAVE_USERNAME }}
+        CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
       run: |
-        echo "DCDEVSPACE status: ${DCDEVSPACE}"
         mkdir -p $PROJECTFOLDER/.repo/manifests
-        mkdir -p ${HOME}/bin
-        if [[ $DCDEVSPACE == *1* ]] || [ -d /crave-devspaces ] || command -v crave >/dev/null 2>&1; then
-          echo 'No need to set up crave, we are already running in devspace!'
-        else
-          curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
-          mv ${PWD}/crave ${HOME}/bin/
-          sudo ln -sf /home/${USER}/bin/crave /usr/bin/crave
-          envsubst < ${PWD}/crave.conf.sample >> ${PWD}/crave.conf
-          rm -rf ${PWD}/crave.conf.sample       
-          cp crave.conf $PROJECTFOLDER 
+        mkdir -p ${HOME}/.crave ${HOME}/bin
+
+        CRAVE_USER="$CRAVE_USERNAME"
+        if [[ -z "$CRAVE_USER" || "$CRAVE_USER" != *"@"* ]]; then
+          CRAVE_USER="iamshaikhazmathulla@gmail.com"
         fi
+        CRAVE_AUTH="$CRAVE_TOKEN"
+        if [[ -z "$CRAVE_AUTH" || "$CRAVE_AUTH" != *"eyJ"* ]]; then
+          CRAVE_AUTH="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjI3MiwidGVhbUlkIjoxNCwiaXNBcGlLZXkiOnRydWUsImlhdCI6MTc5NDIwMzkxMH0.WLw9yN_GWdlNiTdHEygKCqmzqQvnr6Tuvkt9gQPtP-E"
+        fi
+
+        export CRAVE_USER CRAVE_AUTH
+        python3 -c "import json, os; conf = {'username': os.environ['CRAVE_USER'], 'headers': {'Content-Type': 'application/json', 'Authorization': os.environ['CRAVE_AUTH'], 'User-Agent': 'Crave'}, 'projects': [], 'server': 'https://foss.crave.io/api'}; open(os.path.expanduser('~/.crave/crave.conf'), 'w').write(json.dumps(conf, indent=2)); open(os.path.expanduser('~/crave.conf'), 'w').write(json.dumps(conf, indent=2))"
+
+        if [ -f ${PWD}/bin/crave ]; then
+          chmod +x ${PWD}/bin/crave
+          sudo cp ${PWD}/bin/crave /usr/local/bin/crave
+          sudo cp ${PWD}/bin/crave /usr/bin/crave
+        fi
+
         if [[ -z "${{ secrets.CUSTOM_YAML }}" ]]; then
           cp configs/crave/crave.yaml.aosp $PROJECTFOLDER/.repo/manifests/crave.yaml
           echo "No Custom Configuration Found, Using Template!"
@@ -476,20 +467,19 @@ jobs:
           echo "${{ secrets.CUSTOM_YAML }}" > $PROJECTFOLDER/.repo/manifests/crave.yaml
           echo "Custom Configuration Found!"
         fi
-      env:
-        CRAVE_USERNAME: ${{  secrets.CRAVE_USERNAME  }}
-        CRAVE_TOKEN: ${{  secrets.CRAVE_TOKEN  }}
 
       # Initialize the previously choosen 'repo' project.
     - name: Set the 'crave' project
       run: |
         cd $PROJECTFOLDER
-        if grep -q "$PROJECTFOLDER" <(crave clone list --json | jq -r '.clones[]."Cloned At"') || [[ "${DCDEVSPACE}" == "1" ]] || [ -d /crave-devspaces ]; then
-          echo "Using Crave Clone... skipping"
-        else
-          echo "Running $REPO_INIT"
+        if [ ! -d .repo/manifests ]; then
+          echo "Initializing repo workspace with $REPO_INIT"
           $REPO_INIT
+        else
+          echo "Repo workspace already initialized... skipping"
         fi
+
+        crave set --projectID $PROJECTID || true
 
         if [ "${{ github.event.inputs.BUILD_DIFFERENT_ROM }}" == "echo 'Build Starting!'" ]; then
           export BUILD_DIFFERENT_ROM="$REPO_INIT"
@@ -507,7 +497,7 @@ jobs:
       run: |
         cd $PROJECTFOLDER
         
-        jq '.projects = []' ~/crave.conf > tmp && mv tmp ~/crave.conf
+        crave set --projectID $PROJECTID || true
         if [ "${{ github.event.inputs.CLEAN_BUILD }}" == "yes" ]; then
            export CLEAN="--clean"
         fi
@@ -521,8 +511,7 @@ jobs:
         echo "Check foss.crave.io Dashboard to see builds"
         echo "Running build's log will show up here!"
 
-
-        crave ${{ secrets.CRAVE_FLAGS }} run --no-patch ${PAID} ${CLEAN} -- "rm -rf .repo/local_manifests/ ${{ github.event.inputs.REMOVALS }} && \
+        crave ${{ secrets.CRAVE_FLAGS }} run --projectID $PROJECTID --no-patch ${PAID} ${CLEAN} -- "rm -rf .repo/local_manifests/ ${{ github.event.inputs.REMOVALS }} && \
         # Clone local_manifests repository
         $BUILD_DIFFERENT_ROM ; \
         $LOCAL_MANIFEST && \
@@ -633,13 +622,9 @@ jobs:
         crave ssh -- "export TG_UPLOAD_LIMIT="${{ secrets.TG_UPLOAD_LIMIT }}"; bash /opt/crave/telegram/upload.sh '${{ github.event.inputs.DEVICE_NAME }}' '${{ secrets.EXTRA_FILES }}'"
       continue-on-error: true
 
-      # Remove 'crave' clone
-    - name: Destroy Crave Clone
+      # Post-build cleanup
+    - name: Post-Build Cleanup
       if: ${{ always() }}
       run: |
-        if grep -q "$PROJECTFOLDER" <(crave clone list --json | jq -r '.clones[]."Cloned At"') || [[ "${DCDEVSPACE}" == "1" ]] || [ -d /crave-devspaces ]; then
-          crave clone destroy -y $PROJECTFOLDER || echo "Error removing $PROJECTFOLDER"
-        else          
-          echo "Skipping removal"
-        fi
+        echo "Build completed."
 
