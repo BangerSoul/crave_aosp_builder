@@ -450,7 +450,6 @@ jobs:
         CRAVE_USERNAME: ${{ secrets.CRAVE_USERNAME }}
         CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
       run: |
-        mkdir -p $PROJECTFOLDER/.repo/manifests
         mkdir -p ${HOME}/.crave ${HOME}/bin
 
         CRAVE_USER="$CRAVE_USERNAME"
@@ -471,24 +470,26 @@ jobs:
           sudo install -m 755 ${PWD}/bin/crave /usr/bin/crave || true
         fi
 
-        if [[ -z "${{ secrets.CUSTOM_YAML }}" ]]; then
-          cp configs/crave/crave.yaml.aosp $PROJECTFOLDER/.repo/manifests/crave.yaml
-          echo "No Custom Configuration Found, Using Template!"
-        else
-          touch $PROJECTFOLDER/.repo/manifests/crave.yaml || true
-          echo "${{ secrets.CUSTOM_YAML }}" > $PROJECTFOLDER/.repo/manifests/crave.yaml
-          echo "Custom Configuration Found!"
-        fi
-
       # Initialize the previously choosen 'repo' project.
     - name: Set the 'crave' project
       run: |
         cd $PROJECTFOLDER
-        if [ ! -d .repo/manifests ]; then
+        if [ ! -d .repo/manifests/.git ]; then
           echo "Initializing repo workspace with $REPO_INIT"
           $REPO_INIT
         else
           echo "Repo workspace already initialized... skipping"
+        fi
+
+        mkdir -p .repo/manifests
+        if [[ -z "${{ secrets.CUSTOM_YAML }}" ]]; then
+          if [ -f ${GITHUB_WORKSPACE}/configs/crave/crave.yaml.aosp ]; then
+            cp ${GITHUB_WORKSPACE}/configs/crave/crave.yaml.aosp .repo/manifests/crave.yaml
+            echo "No Custom Configuration Found, Using Template!"
+          fi
+        else
+          echo "${{ secrets.CUSTOM_YAML }}" > .repo/manifests/crave.yaml
+          echo "Custom Configuration Found!"
         fi
 
         crave set --projectID $PROJECTID || true
