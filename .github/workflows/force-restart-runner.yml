@@ -40,7 +40,7 @@ jobs:
             CRAVE_USER="iamshaikhazmathulla@gmail.com"
           fi
           CRAVE_AUTH="$CRAVE_AUTH_SECRET"
-          if [[ -z "$CRAVE_AUTH" ]]; then
+          if [[ -z "$CRAVE_AUTH" || "$CRAVE_AUTH" != *"eyJ"* ]]; then
             CRAVE_AUTH="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjI3MiwidGVhbUlkIjoxNCwiaXNBcGlLZXkiOnRydWUsImlhdCI6MTc5NDIwMzkxMH0.WLw9yN_GWdlNiTdHEygKCqmzqQvnr6Tuvkt9gQPtP-E"
           fi
 
@@ -48,6 +48,7 @@ jobs:
           python3 -c "import json, os; conf = {'username': os.environ['CRAVE_USER'], 'headers': {'Content-Type': 'application/json', 'Authorization': os.environ['CRAVE_AUTH'], 'User-Agent': 'Crave'}, 'projects': [], 'server': 'https://foss.crave.io/api'}; open(os.path.expanduser('~/.crave/crave.conf'), 'w').write(json.dumps(conf, indent=2))"
           cp ${HOME}/.crave/crave.conf ${PWD}/crave.conf
           cp ${HOME}/.crave/crave.conf ${HOME}/crave.conf
+          echo "CRAVE_CONFIG=${HOME}/crave.conf" >> $GITHUB_ENV
           echo "Crave configuration created for user:"
           jq -r '.username' ${HOME}/.crave/crave.conf
         fi
