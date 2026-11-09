@@ -48,20 +48,10 @@ jobs:
             CRAVE_AUTH="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjI3MiwidGVhbUlkIjoxNCwiaXNBcGlLZXkiOnRydWUsImlhdCI6MTc5NDIwMzkxMH0.WLw9yN_GWdlNiTdHEygKCqmzqQvnr6Tuvkt9gQPtP-E"
           fi
 
-          cat << EOF > ${HOME}/.crave/crave.conf
-{
-  "username": "${CRAVE_USER}",
-  "headers": {
-    "Content-Type": "application/json",
-    "Authorization": "${CRAVE_AUTH}",
-    "User-Agent": "Crave"
-  },
-  "projects": [],
-  "server": "https://foss.crave.io/api"
-}
-EOF
+          export CRAVE_USER CRAVE_AUTH
+          python3 -c "import json, os; conf = {'username': os.environ['CRAVE_USER'], 'headers': {'Content-Type': 'application/json', 'Authorization': os.environ['CRAVE_AUTH'], 'User-Agent': 'Crave'}, 'projects': [], 'server': 'https://foss.crave.io/api'}; open(os.path.expanduser('~/.crave/crave.conf'), 'w').write(json.dumps(conf, indent=2))"
           cp ${HOME}/.crave/crave.conf ${PWD}/crave.conf
-          echo "Crave configuration created:"
+          echo "Crave configuration created for user:"
           jq -r '.username' ${HOME}/.crave/crave.conf
         fi
 
