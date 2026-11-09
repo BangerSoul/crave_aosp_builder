@@ -59,7 +59,7 @@ jobs:
 
     - name: Run crave devspace
       run: |
-        crave -c ${HOME}/crave.conf devspace -- "bash -c '
+        crave -v -c ${HOME}/crave.conf devspace --no-pty -- "bash -c '
           set -e
           echo \"=== Setting up GitHub Actions Runner in Devspace ===\"
           RUNNER_DIR=\"/crave-devspaces/actions-runner\"
