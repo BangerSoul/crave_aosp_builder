@@ -9,10 +9,10 @@ name: Create Selfhosted Runner
 on:
   workflow_dispatch:
     inputs:
-        RUNNER_TOKEN:
-            description: 'This is the runner token, not PAT'
-            required: true
-        
+      RUNNER_TOKEN:
+        description: 'Runner token from GitHub API registration-token'
+        required: true
+
 jobs:
   run-devspace-and-tmux:
     runs-on: ubuntu-22.04
@@ -21,19 +21,17 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-      # Install 'tmux'
     - name: Set up environment
       run: |
         sudo apt-get update
         sudo apt-get install -y tmux
 
-      # Download and configure 'crave'.
     - name: Configure the 'crave' environment
       run: |
         if [[ $DCDEVSPACE == *1* ]]; then
-        echo 'No need to set up crave, we are already running in devspace!'
+          echo 'No need to set up crave, we are already running in devspace!'
         else
-          mkdir ${HOME}/bin/
+          mkdir -p ${HOME}/bin/
           curl -s https://raw.githubusercontent.com/accupara/crave/master/get_crave.sh | bash -s --
           mv ${PWD}/crave ${HOME}/bin/
           sudo ln -sf /home/${USER}/bin/crave /usr/bin/crave
@@ -41,18 +39,38 @@ jobs:
           rm -rf ${PWD}/crave.conf.sample          
         fi
       env:
-        CRAVE_USERNAME: ${{  secrets.CRAVE_USERNAME  }}
-        CRAVE_TOKEN: ${{  secrets.CRAVE_TOKEN  }}
+        CRAVE_USERNAME: ${{ secrets.CRAVE_USERNAME }}
+        CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
 
-      # Configure 'runner'
     - name: Run crave devspace
       run: |
-        crave ${{ secrets.CRAVE_FLAGS }} devspace -- "rm -rf actions-runner || true
-        curl https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}/scripts/runner-setup.sh | bash
-        if [[ "${{ inputs.RUNNER_TOKEN }}" == "github_pat_*" ]]; then
-          echo "PAT does not work!"
-        else
-            echo "Runner token found"
-        fi
-        cd actions-runner
-         ./config.sh --unattended --url "https://github.com/${{ github.repository }}" --token "${{ inputs.RUNNER_TOKEN }}""
+        crave ${{ secrets.CRAVE_FLAGS }} devspace -- "bash -c '
+          set -e
+          echo \"=== Setting up GitHub Actions Runner in Devspace ===\"
+          RUNNER_DIR=\"/crave-devspaces/actions-runner\"
+          if [ ! -d \"\$RUNNER_DIR\" ]; then
+            RUNNER_DIR=\"actions-runner\"
+          fi
+          mkdir -p \"\$RUNNER_DIR\"
+          cd \"\$RUNNER_DIR\"
+
+          if [ ! -f ./config.sh ]; then
+            echo \"Downloading runner package v2.321.0...\"
+            curl -o actions-runner-linux-x64-2.321.0.tar.gz -L https://github.com/actions/runner/releases/download/v2.321.0/actions-runner-linux-x64-2.321.0.tar.gz
+            tar xzf actions-runner-linux-x64-2.321.0.tar.gz
+            rm -f actions-runner-linux-x64-2.321.0.tar.gz
+          fi
+
+          echo \"Cleaning previous configuration...\"
+          tmux kill-session -t ghactions 2>/dev/null || true
+          rm -f .runner .credentials .credentials_rsaparams || true
+
+          echo \"Configuring runner for ${{ github.repository }}...\"
+          ./config.sh --unattended --url \"https://github.com/${{ github.repository }}\" --token \"${{ inputs.RUNNER_TOKEN }}\" --name \"crave-runner-sweetbenz\" --replace
+
+          echo \"Starting runner in tmux session...\"
+          tmux new-session -d -s ghactions \"./run.sh\"
+          sleep 3
+          tmux ls
+          echo \"Runner successfully configured and started!\"
+        '"
