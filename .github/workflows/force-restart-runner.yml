@@ -1,1 +1,66 @@
-# test no bom
+#
+# Copyright (C) 2024-2025 Antonino Scordino
+# Copyright (C) 2024-2025 Souhrud Reddy
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+name: Start/Restart Selfhosted Runner
+on:
+  workflow_dispatch:
+
+jobs:
+  run-devspace-and-tmux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y tmux
+
+    - name: Configure the 'crave' environment
+      run: |
+        if [[ $DCDEVSPACE == *1* ]]; then
+          echo 'No need to set up crave, we are already running in devspace!'
+        else
+          mkdir -p ${HOME}/bin
+          echo "Downloading Crave 0.2-7237..."
+          curl -sL https://github.com/accupara/crave/releases/download/0.2-7237/crave-0.2-7237-linux-amd64.bin -o ${HOME}/bin/crave
+          chmod +x ${HOME}/bin/crave
+          sudo ln -sf ${HOME}/bin/crave /usr/bin/crave
+          crave -n version || true
+          envsubst < ${PWD}/crave.conf.sample > ${PWD}/crave.conf
+          mkdir -p ${HOME}/.crave
+          cp ${PWD}/crave.conf ${HOME}/.crave/crave.conf
+          rm -rf ${PWD}/crave.conf.sample          
+        fi
+      env:
+        CRAVE_USERNAME: ${{ secrets.CRAVE_USERNAME }}
+        CRAVE_TOKEN: ${{ secrets.CRAVE_TOKEN }}
+
+    - name: Run crave devspace
+      run: |
+        crave ${{ secrets.CRAVE_FLAGS }} -n devspace -- "bash -c '
+          RUNNER_DIR=\"\"
+          if [ -f /crave-devspaces/actions-runner/run.sh ]; then
+            RUNNER_DIR=\"/crave-devspaces/actions-runner\"
+          elif [ -f actions-runner/run.sh ]; then
+            RUNNER_DIR=\"actions-runner\"
+          fi
+
+          if [ -z \"\$RUNNER_DIR\" ]; then
+            echo \"Error! Runner not found!\"
+            exit 1
+          fi
+
+          echo \"Runner found at \$RUNNER_DIR! Restarting it...\"
+          tmux kill-session -t ghactions 2>/dev/null || true
+          tmux new-session -d -s ghactions \"cd \$RUNNER_DIR && ./run.sh\"
+          sleep 2
+          tmux ls
+          echo \"Runner Started\"
+        '"
