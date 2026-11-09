@@ -78,6 +78,7 @@ on:
 
 jobs:
   Start-Runner:
+    if: false
     runs-on: ubuntu-latest
 
     steps:
@@ -337,17 +338,15 @@ jobs:
       LOCAL_MANIFEST: "${{ needs.prepare.outputs.LOCAL_MANIFEST }}"
 
   build:
-    timeout-minutes: 1440
+    timeout-minutes: 360
     name: Build using foss.crave.io
     needs: test
-    runs-on: self-hosted
+    runs-on: ubuntu-22.04
     env:
-      DCDEVSPACE: "1"
+      DCDEVSPACE: "0"
     permissions:
       contents: write
       actions: read
-    concurrency:
-      group: ${{ github.repository_owner }}
     steps:
       # Accept Project Variables
     - name: Set Repo Project
@@ -412,7 +411,20 @@ jobs:
         # Create a project folder
     - name: Create Project Folders
       run: |
+        mkdir -p devspace
+        sudo mkdir -p /crave-devspaces
+        sudo ln -sf ${PWD}/devspace /crave-devspaces
+        sudo chmod 777 /crave-devspaces
         mkdir -p $PROJECTFOLDER
+
+    - name: Ensure repo CLI is installed
+      run: |
+        if ! command -v repo >/dev/null 2>&1; then
+          mkdir -p ~/bin
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          sudo ln -sf ~/bin/repo /usr/bin/repo
+        fi
         
       # Check-out in order to access the repository's files.
     - name: Check-out to repository
@@ -535,7 +547,7 @@ jobs:
         $LUNCH && \
         make installclean && \
         ${{ github.event.inputs.BUILD_COMMAND }}"
-      timeout-minutes: 1440
+      timeout-minutes: 350
 
 
       # Send Build 'status' notification (Fail/Cancel)
@@ -579,8 +591,22 @@ jobs:
       run: |
         cd $PROJECTFOLDER
         echo "${{ github.token }}" > token.txt
-        crave push token.txt -d $(crave ssh -- pwd | grep -v Select | sed -s 's/\r//g')/
-        crave ssh -- 'export GH_UPLOAD_LIMIT="${{ secrets.GH_UPLOAD_LIMIT }}"; bash /opt/crave/github-actions/upload.sh "${{ github.run_id }}" "${{ github.event.inputs.DEVICE_NAME }}" "${{ github.repository }}" "${{ github.event.inputs.PRODUCT_NAME }}-${{ github.run_id }}" "${{ secrets.EXTRA_FILES }}"'
+        crave push token.txt -d $(crave ssh -- pwd | grep -v Select | sed -s 's/\r//g')/ || true
+        crave ssh -- 'export GH_UPLOAD_LIMIT="${{ secrets.GH_UPLOAD_LIMIT }}"; bash /opt/crave/github-actions/upload.sh "${{ github.run_id }}" "${{ github.event.inputs.DEVICE_NAME }}" "${{ github.repository }}" "${{ github.event.inputs.PRODUCT_NAME }}-${{ github.run_id }}" "${{ secrets.EXTRA_FILES }}"' || true
+
+        # Direct GitHub Release fallback via crave pull + gh release
+        mkdir -p artifacts
+        timeout 10m crave pull out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*.zip artifacts/ || true
+        timeout 5m crave pull out/target/product/${{ github.event.inputs.DEVICE_NAME }}/boot.img artifacts/ || true
+        timeout 5m crave pull out/target/product/${{ github.event.inputs.DEVICE_NAME }}/recovery.img artifacts/ || true
+        if ls artifacts/*.zip 1> /dev/null 2>&1; then
+          gh release create "v${{ github.run_id }}" artifacts/* \
+            --title "LineageOS 22.1 for ${{ github.event.inputs.DEVICE_NAME }} (Run #${{ github.run_id }})" \
+            --notes "Automated LineageOS 22.1 Android 15 build for Lenovo Tab M11 (${{ github.event.inputs.DEVICE_NAME }}). Built on Crave.io cloud." \
+            --repo "${{ github.repository }}" || echo "Release created or attempted"
+        fi
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Send Build 'status' notification (Success)
     - name: Telegram Notification
