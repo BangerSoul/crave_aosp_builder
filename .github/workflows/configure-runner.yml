@@ -81,6 +81,7 @@ jobs:
           rm -f .runner .credentials .credentials_rsaparams || true
 
           echo \"Configuring runner for ${{ github.repository }}...\"
+          echo \"DCDEVSPACE=1\" > .env
           ./config.sh --unattended --url \"https://github.com/${{ github.repository }}\" --token \"${{ inputs.RUNNER_TOKEN }}\" --name \"crave-runner-sweetbenz\" --replace
 
           echo \"Starting runner in tmux session...\"
