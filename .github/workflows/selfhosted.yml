@@ -545,8 +545,10 @@ jobs:
         echo "Run ID: ${{ github.run_id }}"; \
 
         # Build the ROM
+        # NOTE: installclean intentionally removed — Crave FOSS has a ~5h time cap;
+        # running installclean defeats the persistent build cache, preventing completion.
+        # The cache persists across runs via ignoreClientHostname in crave.yaml.
         $LUNCH && \
-        make installclean && \
         ${{ github.event.inputs.BUILD_COMMAND }}"
       timeout-minutes: 350
 
@@ -585,26 +587,29 @@ jobs:
         cd $PROJECTFOLDER
         crave stop --all
 
-      # Upload '.zip's and '.img's directly from 'crave' ssh.
+      # Upload build artifact(s) — FOSS-safe: crave ssh/pull unavailable; artifacts saved server-side
     - name: Upload build artifact(s)
       if: ${{ success() }}
       continue-on-error: true
       run: |
         cd $PROJECTFOLDER
-        echo "${{ github.token }}" > token.txt
-        crave push token.txt -d $(crave ssh -- pwd | grep -v Select | sed -s 's/\r//g')/ || true
-        crave ssh -- 'export GH_UPLOAD_LIMIT="${{ secrets.GH_UPLOAD_LIMIT }}"; bash /opt/crave/github-actions/upload.sh "${{ github.run_id }}" "${{ github.event.inputs.DEVICE_NAME }}" "${{ github.repository }}" "${{ github.event.inputs.PRODUCT_NAME }}-${{ github.run_id }}" "${{ secrets.EXTRA_FILES }}"' || true
+        # NOTE: crave ssh and crave pull require interactive sessions — not available on FOSS.
+        # Artifacts are saved server-side by Crave (saveArtifacts: true via --no-patch run).
+        # Use the Crave dashboard at https://foss.crave.io/app/#/dashboard?team=14 to download.
 
-        # Direct GitHub Release fallback via crave pull + gh release
+        # Fallback: try pull with timeout — will silently fail on FOSS, that's expected
         mkdir -p artifacts
-        timeout 10m crave pull out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*.zip artifacts/ || true
-        timeout 5m crave pull out/target/product/${{ github.event.inputs.DEVICE_NAME }}/boot.img artifacts/ || true
-        timeout 5m crave pull out/target/product/${{ github.event.inputs.DEVICE_NAME }}/recovery.img artifacts/ || true
+        timeout 10m crave pull out/target/product/${{ github.event.inputs.DEVICE_NAME }}/*.zip artifacts/ 2>/dev/null || echo "crave pull not available on FOSS (expected)"
+        timeout 5m crave pull out/target/product/${{ github.event.inputs.DEVICE_NAME }}/boot.img artifacts/ 2>/dev/null || true
+        timeout 5m crave pull out/target/product/${{ github.event.inputs.DEVICE_NAME }}/vendor_boot.img artifacts/ 2>/dev/null || true
+        timeout 5m crave pull out/target/product/${{ github.event.inputs.DEVICE_NAME }}/init_boot.img artifacts/ 2>/dev/null || true
         if ls artifacts/*.zip 1> /dev/null 2>&1; then
           gh release create "v${{ github.run_id }}" artifacts/* \
             --title "LineageOS 22.1 for ${{ github.event.inputs.DEVICE_NAME }} (Run #${{ github.run_id }})" \
             --notes "Automated LineageOS 22.1 Android 15 build for Lenovo Tab M11 (${{ github.event.inputs.DEVICE_NAME }}). Built on Crave.io cloud." \
             --repo "${{ github.repository }}" || echo "Release created or attempted"
+        else
+          echo "No artifacts pulled locally — check Crave dashboard for server-side artifacts."
         fi
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -638,17 +643,17 @@ jobs:
       continue-on-error: true
       run: |
         cd $PROJECTFOLDER
-        timeout 15s crave pull out/error.log || true
+        timeout 15s crave pull out/error.log 2>/dev/null || echo "Note: crave pull requires interactive devspace which is disabled on FOSS tier. Build output logs are preserved in Crave dashboard."
         if [ -f out/error.log ]; then
           echo "Displaying out/error.log"
           cat out/error.log
         fi
 
-      # Upload to Telegram
+      # Upload to Telegram (skipped on FOSS if ssh unavailable)
     - name: Upload Using telegram-upload
       run: |
         cd $PROJECTFOLDER
-        crave ssh -- "export TG_UPLOAD_LIMIT="${{ secrets.TG_UPLOAD_LIMIT }}"; bash /opt/crave/telegram/upload.sh '${{ github.event.inputs.DEVICE_NAME }}' '${{ secrets.EXTRA_FILES }}'"
+        crave ssh -- "export TG_UPLOAD_LIMIT=\"${{ secrets.TG_UPLOAD_LIMIT }}\"; bash /opt/crave/telegram/upload.sh '${{ github.event.inputs.DEVICE_NAME }}' '${{ secrets.EXTRA_FILES }}'" 2>/dev/null || echo "crave ssh not supported on FOSS account (skipped telegram-upload)"
       continue-on-error: true
 
       # Post-build cleanup
